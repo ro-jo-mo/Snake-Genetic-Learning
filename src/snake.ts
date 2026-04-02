@@ -12,6 +12,7 @@ export class SnakeGame {
     private tail = 0;
     private score = 0;
     private apple: Vec2 = { x: 0, y: 0 };
+    public timer = 0;
 
     constructor(width: number, height: number) {
         this.width = width;
@@ -47,6 +48,7 @@ export class SnakeGame {
     }
 
     public moveSnake(): void {
+        this.timer++;
         const head = this.snake[this.head];
         const nextPosition = {
             x: head.x + this.direction.x,

@@ -1,11 +1,131 @@
 import Names from "./names.js";
+import { SnakeGame, Vec2 } from "./snake.js";
 
 export class Trainer {
+    private population: Model[];
+    private keepTopK: number;
+    private perturbationFrequency: number;
+    private perturbationMagnitude: number;
+    private gameWidth: number;
+    private gameHeight: number;
+    private inputSize: number;
+
     constructor(
         population: number,
         keepTopK: number,
+        perturbationFrequency: number,
         perturbationMagnitude: number,
-    ) {}
+        gameWidth: number,
+        gameHeight: number,
+        layerSizes: number[],
+    ) {
+        this.keepTopK = keepTopK;
+        this.perturbationFrequency = perturbationFrequency;
+        this.perturbationMagnitude = perturbationMagnitude;
+        this.gameHeight = gameHeight;
+        this.gameWidth = gameWidth;
+        this.inputSize = gameWidth * gameHeight + 6;
+
+        // add output layer
+        layerSizes.push(4);
+
+        this.population = Array.from({ length: population }, () =>
+            Model.fromLayerSizes(this.inputSize, layerSizes),
+        );
+    }
+
+    private runPopulation() {
+        const cores = navigator.hardwareConcurrency;
+    }
+
+    private runModel(model: Model): number {
+        let game = new SnakeGame(this.gameWidth, this.gameHeight);
+
+        while (!game.snakeDied()) {
+            const encoding = this.encodeGame(game);
+            const decision = this.getDecisionFromModel(model, encoding);
+            game.setDirection(decision);
+        }
+
+        return this.fitness(game);
+    }
+
+    public static fitness(game: SnakeGame): number {
+        // It is incredibly trivial to write a snake ai that can reach the maximum possible score
+        // I do not care about this objective
+        // I am mostly interested in getting a good score in a reasonable amount of time
+        const score = game.getScore();
+        const time = game.timer;
+        return score + score / time;
+    }
+
+    private getDecisionFromModel(model: Model, encoding: number[]): Vec2 {
+        // Originally I was going to do 3 outputs, forwards, turn left, turn right
+        // This likely would confuse things for the model
+        // So instead I have opted for 4, with the caveat that one will simply not work
+        // as it can't do a 180 on itself
+        const output = model.execute(encoding);
+        let greatest = 0;
+        for (let i = 1; i < 4; i++) {
+            if (output[i] > output[greatest]) {
+                greatest = i;
+            }
+        }
+
+        switch (greatest) {
+            case 0:
+                return { x: 0, y: 1 };
+            case 0:
+                return { x: 0, y: -1 };
+            case 2:
+                return { x: 1, y: 0 };
+            case 3:
+                return { x: -1, y: 0 };
+            default:
+                throw Error("I screwed up model outputs or something??");
+        }
+    }
+
+    private encodeGame(game: SnakeGame): number[] {
+        // Requirements for the input:
+        // The full game board, encoding the number of moves before the square will be empty
+        // i.e. 0 is empty now, 1 will be empty in 1 turn ...
+        // x y of the apple
+        // x y of the current snake direction
+        // x y of snake head
+        const offset = this.gameHeight * this.gameWidth;
+        let encoding: number[] = Array(this.inputSize).fill(0);
+
+        // convert 2d coord to 1d
+        const convert = (pos: Vec2) => pos.x + pos.y * this.gameWidth;
+
+        const headIndex = game.getHead();
+        const snake = game.getSnake();
+
+        for (let i = 0; i < snake.length; i++) {
+            let duration = headIndex - i;
+
+            if (i > headIndex) {
+                duration += snake.length;
+            }
+            duration = snake.length - duration;
+
+            encoding[convert(snake[i])] = duration;
+        }
+
+        const apple = game.getApple();
+        const direction = game.getDirection();
+        const head = snake[headIndex];
+
+        encoding[offset] = apple.x;
+        encoding[offset + 1] = apple.y;
+        encoding[offset + 2] = direction.x;
+        encoding[offset + 3] = direction.y;
+        encoding[offset + 4] = head.x;
+        encoding[offset + 5] = head.y;
+
+        return encoding;
+    }
 }
 
 // This is a pretty simple model
@@ -32,7 +152,7 @@ export class Model {
 
     public static fromLayerSizes(
         inputSize: number,
-        ...neuronsPerLayer: number[]
+        neuronsPerLayer: number[],
     ): Model {
         let layerWeights: number[][][] = [];
         let layerBiases: number[][] = [];
@@ -82,7 +202,7 @@ export class Model {
     }
 
     // Select random weights from both model A & B
-    // Additionally
+    // Additionally add random perturbations to weights
     public static merge(
         modelA: Model,
         modelB: Model,

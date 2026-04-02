@@ -9,9 +9,8 @@ export class Controller {
     private width = 15;
     private height = 15;
     private inputBuffer: KeyboardEvent[] = [];
-    private tickRate = 200;
+    private tickRate = 180;
     private pause = true;
-    private dead = false;
     private aiOn = true;
     private currentInterval = 0;
 
@@ -40,15 +39,6 @@ export class Controller {
         const key = this.inputBuffer.shift();
         if (key) {
             this.pause = this.handleInput(key);
-            if (!this.pause) {
-                this.dead = false;
-            }
-        }
-
-        if (this.dead) {
-            this.view.drawMessage("You died! Game over!\nAny key to restart");
-            this.restartGame();
-            return;
         }
 
         if (this.pause) {
@@ -58,8 +48,13 @@ export class Controller {
 
         this.game.moveSnake();
         if (this.game.snakeDied()) {
-            this.dead = true;
+            this.inputBuffer = [];
+            this.view.drawMessage("You died! Game over!\nAny key to restart");
+            clearInterval(this.currentInterval);
+            this.restartGame();
+            setTimeout(() => this.start(), 1000);
             this.pause = true;
+            return;
         }
         this.drawGame();
     }

@@ -55,21 +55,20 @@ export class View {
 
     private drawSnake(snake: Vec2[], head: number, direction: Vec2): void {
         for (let i = 0; i < snake.length; i++) {
-            let x: number;
+            let duration = head - i;
+
             if (i > head) {
-                x = head + (snake.length - i);
-            } else {
-                x = head - i;
+                duration += snake.length;
             }
 
-            x /= snake.length - 1;
+            duration /= snake.length - 1;
 
             this.context.fillStyle = this.colourInterpolate(
                 COLOURS.snakeUpper,
                 COLOURS.snakeLower,
-                x,
+                duration,
             );
-            this.drawCell(snake[i], 8 + 12 * x);
+            this.drawCell(snake[i], 8 + 12 * duration);
         }
 
         let { x, y } = snake[head];
