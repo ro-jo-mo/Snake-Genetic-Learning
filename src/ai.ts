@@ -1,5 +1,5 @@
-import Names from "./names.js";
-import { SnakeGame, Vec2 } from "./snake.js";
+import Names from "./names";
+import { SnakeGame, Vec2 } from "./snake";
 
 export class Trainer {
     private population: Model[];
@@ -47,7 +47,7 @@ export class Trainer {
             game.setDirection(decision);
         }
 
-        return this.fitness(game);
+        return Trainer.fitness(game);
     }
 
     public static fitness(game: SnakeGame): number {

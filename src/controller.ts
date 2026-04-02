@@ -1,7 +1,7 @@
 // mvc controller
-import { SnakeGame } from "./snake.js";
-import { View } from "./view.js";
-import type { Vec2 } from "./snake.js";
+import { SnakeGame } from "./snake";
+import { View } from "./view";
+import type { Vec2 } from "./snake";
 
 export class Controller {
     private view: View;
@@ -52,7 +52,7 @@ export class Controller {
             this.view.drawMessage("You died! Game over!\nAny key to restart");
             clearInterval(this.currentInterval);
             this.restartGame();
-            setTimeout(() => this.start(), 1000);
+            setTimeout(() => this.start(), 2000);
             this.pause = true;
             return;
         }

@@ -1,5 +1,5 @@
 // Handles presenting the game and user inputs
-import type { Vec2 } from "./snake.js";
+import type { Vec2 } from "./snake";
 
 const COLOURS = {
     apple: "#ef476f",
