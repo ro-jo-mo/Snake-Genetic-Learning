@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd D:/code/Javascript/Learning && tsc snake/snake.ts --target ES2020 --lib ES2020,DOM --strict --outDir snake/)",
+      "Bash(cd D:/code/Javascript/Learning && tsc snake/snake.ts --target ES2020 --lib ES2020,DOM --strict --outDir snake/ --ignoreConfig)"
+    ]
+  }
+}

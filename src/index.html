@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Snake</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <h1>Snake</h1>
+
+  <div id="hud">
+    <span>Score: <span id="score">0</span></span>
+  </div>
+
+  <div id="canvas-container">
+    <canvas id="game-canvas"></canvas>
+    <button id="ai-button">AI</button>
+  </div>
+
+  <p id="message"></p>
+
+  <p id="controls">
+    <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> &nbsp;to move &nbsp;|&nbsp;
+    <kbd>Space</kbd> to pause
+  </p>
+
+  <script type="module" src="../dist/main.js"></script>
+</body>
+</html>

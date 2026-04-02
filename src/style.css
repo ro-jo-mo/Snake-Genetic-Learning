@@ -1,0 +1,101 @@
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: #26547c;
+  background-image:
+    linear-gradient(rgba(255,255,255,0.15) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.15) 1px, transparent 1px);
+  background-size: 20px 20px;
+  color: #ffd166;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+}
+
+h1 {
+  font-size: 2rem;
+  letter-spacing: 0.1em;
+  color: #06d6a0;
+  background: #fcfcfc;
+  padding: 2px 20px;
+  border-radius: 12px;
+}
+canvas {
+  background: #ffd166
+}
+
+#hud {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  font-size: 1.1rem;
+}
+
+#hud span {
+  color: #ffd166;
+  font-size: 1.5rem;
+}
+
+#ai-button {
+  background: #86efac;
+  color: #0f172a;
+  border: none;
+  padding: 8px 22px;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+#ai-button:hover {
+  background: #9fffc2;
+}
+
+#canvas-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+#ai-button {
+  position: absolute;
+  left: calc(100% + 16px);
+}
+
+canvas {
+  border: 2px solid #334155;
+  border-radius: 8px;
+  display: block;
+}
+
+#message {
+  height: 1.4em;
+  color: #fcfcfc;
+  font-size: 0.95rem;
+  text-align: center;
+}
+
+#controls {
+  color: #fcfcfc;
+  font-size: 0.85rem;
+  text-align: center;
+  line-height: 1.7;
+}
+
+#controls kbd {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-family: inherit;
+  color: #94a3b8;
+}
