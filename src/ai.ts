@@ -1,14 +1,21 @@
 import Names from "./names";
 import { SnakeGame, Vec2 } from "./snake";
 
+type ModelFitness = { model: Model; fitness: number };
+
 export class Trainer {
     private population: Model[];
-    private keepTopK: number;
+    private numModelsKept: number;
+
     private perturbationFrequency: number;
     private perturbationMagnitude: number;
+
     private gameWidth: number;
     private gameHeight: number;
+
     private inputSize: number;
+
+    private topKModels: ModelFitness[];
 
     constructor(
         population: number,
@@ -19,7 +26,7 @@ export class Trainer {
         gameHeight: number,
         layerSizes: number[],
     ) {
-        this.keepTopK = keepTopK;
+        this.numModelsKept = keepTopK;
         this.perturbationFrequency = perturbationFrequency;
         this.perturbationMagnitude = perturbationMagnitude;
         this.gameHeight = gameHeight;
@@ -32,34 +39,122 @@ export class Trainer {
         this.population = Array.from({ length: population }, () =>
             Model.fromLayerSizes(this.inputSize, layerSizes),
         );
+
+        // assign dummy values to top k for now
+        this.topKModels = Array(keepTopK).fill({
+            model: this.population[0],
+            fitness: 0,
+        });
     }
 
-    private runPopulation() {
+    public async train(): Promise<void> {
+        let fitnesses = await this.runPopulation();
+
+        let sorted = this.population
+            .map((model, i) => ({ model, fitness: fitnesses[i] }))
+            .sort((a, b) => b.fitness - a.fitness);
+
+        // There is zero reason to re run the top k each iteration
+        // Simply store them separately
+        this.updateTopK(sorted);
+
+        let nextGeneration: Model[] = [];
+        // Mutate top k with random selection
+        let i = 0;
+        while (nextGeneration.length < this.population.length) {
+            // some biasing towards more performant models
+            // this looks somewhat stupid but does work
+
+            let index = [Math.random(), Math.random(), Math.random()]
+                .sort()
+                .shift();
+            if (index === undefined) {
+                throw Error("Seriously???");
+            }
+            index *= Math.floor(this.population.length);
+            nextGeneration.push(
+                Model.merge(
+                    sorted[i].model,
+                    sorted[index].model,
+                    this.perturbationFrequency,
+                    this.perturbationMagnitude,
+                ),
+            );
+
+            i = i % this.numModelsKept;
+        }
+
+        this.population = nextGeneration;
+    }
+
+    private updateTopK(models: ModelFitness[]): void {
+        this.topKModels.concat(models.slice(0, this.numModelsKept));
+        this.topKModels.sort((a, b) => b.fitness - a.fitness);
+        this.topKModels = this.topKModels.slice(0, this.numModelsKept);
+    }
+
+    private async runPopulation(): Promise<number[]> {
         const cores = navigator.hardwareConcurrency;
+
+        const chunkSize = Math.ceil(this.population.length / cores);
+        let promises: Promise<number[]>[] = [];
+        for (let i = 0; i < cores; i++) {
+            const batch = this.population.slice(
+                chunkSize * i,
+                chunkSize * (i + 1),
+            );
+
+            const promise = new Promise<number[]>((resolve) => {
+                const worker = new Worker("worker.ts");
+
+                worker.postMessage({
+                    batch,
+                    width: this.gameWidth,
+                    height: this.gameHeight,
+                });
+                worker.onmessage = (e) => {
+                    resolve(e.data.fitnesses);
+                    worker.terminate();
+                };
+            });
+
+            promises.push(promise);
+        }
+
+        const fitnesses = await Promise.all(promises);
+
+        return fitnesses.flat();
     }
 
-    private runModel(model: Model): number {
-        let game = new SnakeGame(this.gameWidth, this.gameHeight);
+    public static runModel(
+        model: Model,
+        width: number,
+        height: number,
+    ): number {
+        let game = new SnakeGame(width, height);
 
         while (!game.snakeDied()) {
-            const encoding = this.encodeGame(game);
-            const decision = this.getDecisionFromModel(model, encoding);
+            const encoding = Trainer.encodeGame(game, width, height);
+            const decision = Trainer.getDecisionFromModel(model, encoding);
             game.setDirection(decision);
         }
 
         return Trainer.fitness(game);
     }
 
-    public static fitness(game: SnakeGame): number {
+    private static fitness(game: SnakeGame): number {
         // It is incredibly trivial to write a snake ai that can reach the maximum possible score
         // I do not care about this objective
         // I am mostly interested in getting a good score in a reasonable amount of time
         const score = game.getScore();
         const time = game.timer;
-        return score + score / time;
+        return score + (5 * score) / time ** 2;
     }
 
-    private getDecisionFromModel(model: Model, encoding: number[]): Vec2 {
+    private static getDecisionFromModel(
+        model: Model,
+        encoding: number[],
+    ): Vec2 {
         // Originally I was going to do 3 outputs, forwards, turn left, turn right
         // This likely would confuse things for the model
         // So instead I have opted for 4, with the caveat that one will simply not work
@@ -75,7 +170,7 @@ export class Trainer {
         switch (greatest) {
             case 0:
                 return { x: 0, y: 1 };
-            case 0:
+            case 1:
                 return { x: 0, y: -1 };
             case 2:
                 return { x: 1, y: 0 };
@@ -86,18 +181,22 @@ export class Trainer {
         }
     }
 
-    private encodeGame(game: SnakeGame): number[] {
+    private static encodeGame(
+        game: SnakeGame,
+        width: number,
+        height: number,
+    ): number[] {
         // Requirements for the input:
         // The full game board, encoding the number of moves before the square will be empty
         // i.e. 0 is empty now, 1 will be empty in 1 turn ...
         // x y of the apple
         // x y of the current snake direction
         // x y of snake head
-        const offset = this.gameHeight * this.gameWidth;
-        let encoding: number[] = Array(this.inputSize).fill(0);
+        const offset = height * width;
+        let encoding: number[] = Array(offset + 6).fill(0);
 
         // convert 2d coord to 1d
-        const convert = (pos: Vec2) => pos.x + pos.y * this.gameWidth;
+        const convert = (pos: Vec2) => pos.x + pos.y * width;
 
         const headIndex = game.getHead();
         const snake = game.getSnake();
