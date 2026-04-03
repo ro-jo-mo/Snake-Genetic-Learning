@@ -47,8 +47,8 @@ export class Trainer {
         });
     }
 
-    public async train(): Promise<void> {
-        let fitnesses = await this.runPopulation();
+    public async train(callback: (games: SnakeGame[]) => void): Promise<void> {
+        let fitnesses = await this.runPopulation(callback);
 
         let sorted = this.population
             .map((model, i) => ({ model, fitness: fitnesses[i] }))
@@ -93,15 +93,19 @@ export class Trainer {
         this.topKModels = this.topKModels.slice(0, this.numModelsKept);
     }
 
-    private async runPopulation(): Promise<number[]> {
+    private async runPopulation(
+        callback: (games: SnakeGame[]) => void,
+    ): Promise<number[]> {
         const cores = navigator.hardwareConcurrency;
 
-        const chunkSize = Math.ceil(this.population.length / cores);
+        const batchSize = Math.ceil(this.population.length / cores);
         let promises: Promise<number[]>[] = [];
-        for (let i = 0; i < cores; i++) {
+
+        // Start by creating new worker threads to run training
+        for (let i = 0; i < cores - 1; i++) {
             const batch = this.population.slice(
-                chunkSize * i,
-                chunkSize * (i + 1),
+                batchSize * i,
+                batchSize * (i + 1),
             );
 
             const promise = new Promise<number[]>((resolve) => {
@@ -121,8 +125,29 @@ export class Trainer {
             promises.push(promise);
         }
 
-        const fitnesses = await Promise.all(promises);
+        // As sending data between workers is slow, we keep the main thread for a visualisation
+        const batch = this.population.slice(
+            (cores - 1) * batchSize,
+            cores * batchSize,
+        );
 
+        let games = Array.from(
+            { length: batch.length },
+            () => new SnakeGame(this.gameWidth, this.gameHeight),
+        );
+
+        while (!games.every((game) => game.snakeDied())) {
+            Trainer.runModelsOneStep(
+                batch,
+                games,
+                this.gameWidth,
+                this.gameHeight,
+            );
+            callback(games);
+        }
+
+        const fitnesses = await Promise.all(promises);
+        fitnesses.push(games.map((game) => Trainer.fitness(game)));
         return fitnesses.flat();
     }
 
@@ -140,6 +165,24 @@ export class Trainer {
         }
 
         return Trainer.fitness(game);
+    }
+
+    private static runModelsOneStep(
+        models: Model[],
+        games: SnakeGame[],
+        width: number,
+        height: number,
+    ): void {
+        for (let i = 0; i < games.length; i++) {
+            if (!games[i].snakeDied()) {
+                const encoding = Trainer.encodeGame(games[i], width, height);
+                const decision = Trainer.getDecisionFromModel(
+                    models[i],
+                    encoding,
+                );
+                games[i].setDirection(decision);
+            }
+        }
     }
 
     private static fitness(game: SnakeGame): number {

@@ -1,0 +1,8 @@
+- Add UI visualiser for NN
+- Create UI list to display fitness scores
+- Add visuals for training
+    - Spectator panel 
+    - Show current model fitness
+    - Cycle through different models playing
+        - Some will be dead
+    - Alternatively draw all

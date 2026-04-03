@@ -14,6 +14,7 @@ export class View {
     private scoreText: HTMLElement;
     private messageText: HTMLElement;
     private aiButton: HTMLElement;
+    private highScoreText: HTMLElement;
     private cellSize = 50;
 
     constructor(width: number, height: number) {
@@ -22,6 +23,7 @@ export class View {
         ) as HTMLCanvasElement;
         this.context = this.canvas.getContext("2d")!;
         this.scoreText = document.getElementById("score")!;
+        this.highScoreText = document.getElementById("high-score")!;
         this.messageText = document.getElementById("message")!;
         this.aiButton = document.getElementById("ai-button")!;
         this.canvas.width = width * this.cellSize;
@@ -32,6 +34,10 @@ export class View {
         this.messageText.textContent = msg;
     }
 
+    public drawHighScore(score: number): void {
+        this.highScoreText.textContent = score.toString();
+    }
+
     public draw(
         snake: Vec2[],
         head: number,
@@ -40,7 +46,7 @@ export class View {
         score: number,
     ): void {
         this.messageText.textContent = "";
-        this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        this.clear();
 
         this.drawGrid();
         this.drawSnake(snake, head, direction);
@@ -49,8 +55,8 @@ export class View {
         this.scoreText.textContent = score.toString();
     }
 
-    public drawAiToggle(msg: string) {
-        this.aiButton.textContent = msg;
+    public clear(): void {
+        this.context.clearRect(0, 0, this.canvas.width, this.canvas.height);
     }
 
     private drawSnake(snake: Vec2[], head: number, direction: Vec2): void {

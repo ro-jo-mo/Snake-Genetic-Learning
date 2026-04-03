@@ -1,6 +1,7 @@
 // mvc controller
 import { SnakeGame } from "./snake";
 import { View } from "./view";
+import { Trainer } from "./ai";
 import type { Vec2 } from "./snake";
 
 export class Controller {
@@ -11,16 +12,38 @@ export class Controller {
     private inputBuffer: KeyboardEvent[] = [];
     private tickRate = 180;
     private pause = true;
-    private aiOn = true;
+    private highScore = 0;
+
     private currentInterval = 0;
 
     constructor() {
         this.view = new View(this.width, this.height);
         this.game = new SnakeGame(this.width, this.height);
         document.addEventListener("keydown", (e) => this.bufferInput(e));
+
+        document.getElementById("layer-add")!.addEventListener("click", () => {
+            const input = document.createElement("input");
+            input.type = "number";
+            input.className = "layer-input";
+            input.value = "64";
+            input.min = "1";
+            document.getElementById("layer-inputs")!.appendChild(input);
+        });
+
         document
-            .getElementById("ai-button")!
-            .addEventListener("click", () => this.aiToggle());
+            .getElementById("layer-remove")!
+            .addEventListener("click", () => {
+                const container = document.getElementById("layer-inputs")!;
+                if (container.children.length > 1) {
+                    container.removeChild(container.lastElementChild!);
+                }
+            });
+
+        document
+            .getElementById("train-button")!
+            .addEventListener("click", () => {
+                this.startAi();
+            });
     }
 
     public start(): void {
@@ -32,8 +55,41 @@ export class Controller {
     }
 
     public startAi(): void {
+        const s = this.getAiSettings();
+        this.width = s.gameWidth;
+        this.height = s.gameHeight;
+        this.game = new SnakeGame(this.width, this.height);
+        const trainer = new Trainer(
+            s.population,
+            s.keepTopK,
+            s.perturbationFrequency,
+            s.perturbationMagnitude,
+            s.gameWidth,
+            s.gameHeight,
+            s.layerSizes,
+        );
         this.drawGame();
+        trainer.train((games) => this.aiCallback(games));
     }
+
+    private getAiSettings() {
+        const get = (id: string) =>
+            (document.getElementById(id) as HTMLInputElement).value;
+        return {
+            population: parseInt(get("ai-population")),
+            keepTopK: parseInt(get("ai-keep-top-k")),
+            perturbationFrequency: parseFloat(get("ai-perturb-freq")),
+            perturbationMagnitude: parseFloat(get("ai-perturb-mag")),
+            gameWidth: parseInt(get("ai-game-width")),
+            gameHeight: parseInt(get("ai-game-height")),
+            layerSizes: Array.from(
+                document.querySelectorAll<HTMLInputElement>(".layer-input"),
+                (el) => parseInt(el.value),
+            ),
+        };
+    }
+
+    private aiCallback(games: SnakeGame[]): void {}
 
     private tick(): void {
         const key = this.inputBuffer.shift();
@@ -47,6 +103,12 @@ export class Controller {
         }
 
         this.game.moveSnake();
+
+        if (this.game.getScore() > this.highScore) {
+            this.highScore = this.game.getScore();
+            this.view.drawHighScore(this.highScore);
+        }
+
         if (this.game.snakeDied()) {
             this.inputBuffer = [];
             this.view.drawMessage("You died! Game over!\nAny key to restart");
@@ -54,24 +116,10 @@ export class Controller {
             this.restartGame();
             setTimeout(() => this.start(), 2000);
             this.pause = true;
+
             return;
         }
         this.drawGame();
-    }
-
-    private aiToggle(): void {
-        this.restartGame();
-        window.clearInterval(this.currentInterval);
-
-        if (this.aiOn) {
-            this.view.drawAiToggle("User");
-            this.start();
-        } else {
-            this.view.drawAiToggle("AI");
-            this.startAi();
-        }
-
-        this.aiOn = !this.aiOn;
     }
 
     private restartGame() {
