@@ -47,7 +47,9 @@ export class Trainer {
         });
     }
 
-    public async train(callback: (games: SnakeGame[]) => void): Promise<void> {
+    public async train(
+        callback: (names: string[], games: SnakeGame[]) => void,
+    ): Promise<void> {
         let fitnesses = await this.runPopulation(callback);
 
         let sorted = this.population
@@ -94,7 +96,7 @@ export class Trainer {
     }
 
     private async runPopulation(
-        callback: (games: SnakeGame[]) => void,
+        callback: (names: string[], games: SnakeGame[]) => void,
     ): Promise<number[]> {
         const cores = navigator.hardwareConcurrency;
 
@@ -109,7 +111,10 @@ export class Trainer {
             );
 
             const promise = new Promise<number[]>((resolve) => {
-                const worker = new Worker("worker.ts");
+                const worker = new Worker(
+                    new URL("./worker.ts", import.meta.url),
+                    { type: "module" },
+                );
 
                 worker.postMessage({
                     batch,
@@ -135,7 +140,7 @@ export class Trainer {
             { length: batch.length },
             () => new SnakeGame(this.gameWidth, this.gameHeight),
         );
-
+        // AFter each training step, return data to ui
         while (!games.every((game) => game.snakeDied())) {
             Trainer.runModelsOneStep(
                 batch,
@@ -143,7 +148,10 @@ export class Trainer {
                 this.gameWidth,
                 this.gameHeight,
             );
-            callback(games);
+            callback(
+                batch.map((model) => model.name),
+                games,
+            );
         }
 
         const fitnesses = await Promise.all(promises);
@@ -290,6 +298,10 @@ export class Model {
         } else {
             this.name = name;
         }
+    }
+
+    public static deserialize(data: { layerWeights: number[][][]; layerBiases: number[][]; name: string }): Model {
+        return new Model(data.layerWeights, data.layerBiases, data.name);
     }
 
     public static fromLayerSizes(
@@ -453,9 +465,9 @@ function gaussian(sigma: number): number {
         sigma *
         Math.sqrt(-2 * Math.log(Math.random())) *
         Math.cos(2 * Math.PI * Math.random());
-    if (!Number.isSafeInteger(value)) {
-        value = 0;
-        console.log("Gaussian value was unsafe");
+    if (!Number.isFinite(value)) {
+        console.log("Gaussian was funny?");
+        return 0;
     }
     return value;
 }

@@ -61,10 +61,76 @@ canvas {
   background: #9fffc2;
 }
 
+#game-row {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
 #canvas-container {
   position: relative;
   display: flex;
   align-items: center;
+}
+
+#spectate-panel {
+  align-self: stretch;
+  width: 240px;
+  overflow-y: auto;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 8px;
+}
+
+#spectate-panel.hidden {
+  display: none;
+}
+
+#spectate-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+#spectate-table th {
+  color: #64748b;
+  font-weight: 600;
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 1px solid #334155;
+  position: sticky;
+  top: 0;
+  background: #1e293b;
+}
+
+#spectate-table td {
+  padding: 6px 10px;
+  color: #e2e8f0;
+}
+
+#spectate-table tbody tr {
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+#spectate-table tbody tr:hover {
+  background: #334155;
+}
+
+#spectate-table tbody tr.selected {
+  background: #1d4ed8;
+}
+
+#spectate-table tbody tr.dead td {
+  color: #475569;
+}
+
+.status-alive {
+  color: #86efac;
+}
+
+.status-dead {
+  color: #f87171;
 }
 
 #ai-button {

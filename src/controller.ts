@@ -14,6 +14,7 @@ export class Controller {
     private pause = true;
     private highScore = 0;
 
+    private spectateIndex = 0;
     private currentInterval = 0;
 
     constructor() {
@@ -56,8 +57,7 @@ export class Controller {
 
     public startAi(): void {
         const s = this.getAiSettings();
-        this.width = s.gameWidth;
-        this.height = s.gameHeight;
+
         this.game = new SnakeGame(this.width, this.height);
         const trainer = new Trainer(
             s.population,
@@ -68,28 +68,71 @@ export class Controller {
             s.gameHeight,
             s.layerSizes,
         );
+        this.spectateIndex = 0;
         this.drawGame();
-        trainer.train((games) => this.aiCallback(games));
+        trainer.train((names, games) => this.aiCallback(names, games));
     }
 
     private getAiSettings() {
         const get = (id: string) =>
             (document.getElementById(id) as HTMLInputElement).value;
+
+        let layers = Array.from(
+            document.querySelectorAll<HTMLInputElement>(".layer-input"),
+            (el) => parseInt(el.value),
+        );
+        // add output layer
+        layers.push(4);
+
         return {
             population: parseInt(get("ai-population")),
             keepTopK: parseInt(get("ai-keep-top-k")),
             perturbationFrequency: parseFloat(get("ai-perturb-freq")),
             perturbationMagnitude: parseFloat(get("ai-perturb-mag")),
-            gameWidth: parseInt(get("ai-game-width")),
-            gameHeight: parseInt(get("ai-game-height")),
-            layerSizes: Array.from(
-                document.querySelectorAll<HTMLInputElement>(".layer-input"),
-                (el) => parseInt(el.value),
-            ),
+            gameWidth: 15,
+            gameHeight: 15,
+            layerSizes: layers,
         };
     }
 
-    private aiCallback(games: SnakeGame[]): void {}
+    private aiCallback(names: string[], games: SnakeGame[]): void {
+        const tbody = document.getElementById("spectate-tb ody")!;
+        tbody.innerHTML = "";
+        console.log(`Callback running ${names.toString}`);
+        games.forEach((game, i) => {
+            const dead = game.snakeDied();
+            const row = document.createElement("tr");
+            if (dead) row.classList.add("dead");
+            if (i === this.spectateIndex) row.classList.add("selected");
+
+            const nameTd = document.createElement("td");
+            nameTd.textContent = names[i];
+
+            const scoreTd = document.createElement("td");
+            scoreTd.textContent = game.getScore().toString();
+
+            const statusTd = document.createElement("td");
+            statusTd.textContent = dead ? "Dead" : "Alive";
+            statusTd.className = dead ? "status-dead" : "status-alive";
+
+            row.append(nameTd, scoreTd, statusTd);
+            row.addEventListener("click", () => {
+                this.spectateIndex = i;
+            });
+            tbody.appendChild(row);
+        });
+
+        if (this.spectateIndex !== null) {
+            const game = games[this.spectateIndex];
+            this.view.draw(
+                game.getSnake(),
+                game.getHead(),
+                game.getDirection(),
+                game.getApple(),
+                game.getScore(),
+            );
+        }
+    }
 
     private tick(): void {
         const key = this.inputBuffer.shift();
