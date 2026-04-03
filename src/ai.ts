@@ -50,7 +50,11 @@ export class Trainer {
     public async train(
         callback: (names: string[], games: SnakeGame[]) => void,
     ): Promise<void> {
+        console.log("Training starts");
+
         let fitnesses = await this.runPopulation(callback);
+
+        console.log("Fitnesses gathered");
 
         let sorted = this.population
             .map((model, i) => ({ model, fitness: fitnesses[i] }))
@@ -67,13 +71,10 @@ export class Trainer {
             // some biasing towards more performant models
             // this looks somewhat stupid but does work
 
-            let index = [Math.random(), Math.random(), Math.random()]
-                .sort()
-                .shift();
-            if (index === undefined) {
-                throw Error("Seriously???");
-            }
-            index *= Math.floor(this.population.length);
+            let index = [Math.random(), Math.random(), Math.random()].sort()[0];
+
+            index = Math.floor(this.population.length * index);
+
             nextGeneration.push(
                 Model.merge(
                     sorted[i].model,
@@ -102,7 +103,7 @@ export class Trainer {
 
         const batchSize = Math.ceil(this.population.length / cores);
         let promises: Promise<number[]>[] = [];
-
+        console.log("Creating workers");
         // Start by creating new worker threads to run training
         for (let i = 0; i < cores - 1; i++) {
             const batch = this.population.slice(
@@ -141,7 +142,11 @@ export class Trainer {
             () => new SnakeGame(this.gameWidth, this.gameHeight),
         );
         // AFter each training step, return data to ui
+        console.log(`Main thread training ${batch.length} models`);
         while (!games.every((game) => game.snakeDied())) {
+            for (const g of games) {
+                console.log(`${g.snakeDied()}`);
+            }
             Trainer.runModelsOneStep(
                 batch,
                 games,
@@ -153,8 +158,9 @@ export class Trainer {
                 games,
             );
         }
-
+        console.log("Main thread finished");
         const fitnesses = await Promise.all(promises);
+        console.log("Workers finished");
         fitnesses.push(games.map((game) => Trainer.fitness(game)));
         return fitnesses.flat();
     }
@@ -170,6 +176,7 @@ export class Trainer {
             const encoding = Trainer.encodeGame(game, width, height);
             const decision = Trainer.getDecisionFromModel(model, encoding);
             game.setDirection(decision);
+            game.moveSnake();
         }
 
         return Trainer.fitness(game);
@@ -189,6 +196,7 @@ export class Trainer {
                     encoding,
                 );
                 games[i].setDirection(decision);
+                games[i].moveSnake();
             }
         }
     }
@@ -300,7 +308,11 @@ export class Model {
         }
     }
 
-    public static deserialize(data: { layerWeights: number[][][]; layerBiases: number[][]; name: string }): Model {
+    public static deserialize(data: {
+        layerWeights: number[][][];
+        layerBiases: number[][];
+        name: string;
+    }): Model {
         return new Model(data.layerWeights, data.layerBiases, data.name);
     }
 

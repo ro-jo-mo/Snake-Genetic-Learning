@@ -106,12 +106,6 @@ export class SnakeGame {
     }
 
     public snakeDied(): boolean {
-        if (this.boundsCheck()) {
-            console.log("Bound checked!!");
-        }
-        if (this.selfCollisionCheck()) {
-            console.log("self collision checked!!");
-        }
         return this.boundsCheck() || this.selfCollisionCheck();
     }
 

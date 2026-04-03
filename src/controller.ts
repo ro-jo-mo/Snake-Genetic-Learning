@@ -55,7 +55,7 @@ export class Controller {
         );
     }
 
-    public startAi(): void {
+    public async startAi(): Promise<void> {
         const s = this.getAiSettings();
 
         this.game = new SnakeGame(this.width, this.height);
@@ -70,7 +70,8 @@ export class Controller {
         );
         this.spectateIndex = 0;
         this.drawGame();
-        trainer.train((names, games) => this.aiCallback(names, games));
+
+        await trainer.train((names, games) => this.aiCallback(names, games));
     }
 
     private getAiSettings() {
@@ -81,6 +82,7 @@ export class Controller {
             document.querySelectorAll<HTMLInputElement>(".layer-input"),
             (el) => parseInt(el.value),
         );
+
         // add output layer
         layers.push(4);
 
@@ -96,9 +98,11 @@ export class Controller {
     }
 
     private aiCallback(names: string[], games: SnakeGame[]): void {
-        const tbody = document.getElementById("spectate-tb ody")!;
+        return;
+
+        const tbody = document.getElementById("spectate-tbody")!;
         tbody.innerHTML = "";
-        console.log(`Callback running ${names.toString}`);
+
         games.forEach((game, i) => {
             const dead = game.snakeDied();
             const row = document.createElement("tr");
