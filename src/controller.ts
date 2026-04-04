@@ -12,14 +12,19 @@ export class Controller {
     private inputBuffer: KeyboardEvent[] = [];
     private tickRate = 180;
     private pause = true;
-    private highScore = 0;
-
-    private spectateIndex = 0;
+    private highScore: number;
+    private table: HTMLElement;
+    private spectating = 0;
     private currentInterval = 0;
+    private tablePopulated = false;
+    private training = false;
 
     constructor() {
         this.view = new View(this.width, this.height);
         this.game = new SnakeGame(this.width, this.height);
+        this.highScore = this.loadHighScore();
+        this.table = document.getElementById("spectate-table-body")!;
+
         document.addEventListener("keydown", (e) => this.bufferInput(e));
 
         document.getElementById("layer-add")!.addEventListener("click", () => {
@@ -48,7 +53,7 @@ export class Controller {
     }
 
     public start(): void {
-        this.drawGame();
+        this.drawGame(this.game);
         this.currentInterval = window.setInterval(
             () => this.tick(),
             this.tickRate,
@@ -56,6 +61,16 @@ export class Controller {
     }
 
     public async startAi(): Promise<void> {
+        this.training = !this.training;
+
+        this.view.toggleTrainButton(this.training);
+
+        clearInterval(this.currentInterval);
+
+        if (!this.training) {
+            return;
+        }
+
         const s = this.getAiSettings();
 
         this.game = new SnakeGame(this.width, this.height);
@@ -68,10 +83,17 @@ export class Controller {
             s.gameHeight,
             s.layerSizes,
         );
-        this.spectateIndex = 0;
-        this.drawGame();
+        this.spectating = 0;
 
-        await trainer.train((names, games) => this.aiCallback(names, games));
+        this.drawGame(this.game);
+
+        while (this.training) {
+            console.log("Running next training iteration");
+            this.tablePopulated = false;
+            await trainer.train((names, games) =>
+                this.aiCallback(names, games),
+            );
+        }
     }
 
     private getAiSettings() {
@@ -82,9 +104,6 @@ export class Controller {
             document.querySelectorAll<HTMLInputElement>(".layer-input"),
             (el) => parseInt(el.value),
         );
-
-        // add output layer
-        layers.push(4);
 
         return {
             population: parseInt(get("ai-population")),
@@ -98,44 +117,30 @@ export class Controller {
     }
 
     private aiCallback(names: string[], games: SnakeGame[]): void {
-        return;
-
-        const tbody = document.getElementById("spectate-tbody")!;
-        tbody.innerHTML = "";
-
-        games.forEach((game, i) => {
-            const dead = game.snakeDied();
-            const row = document.createElement("tr");
-            if (dead) row.classList.add("dead");
-            if (i === this.spectateIndex) row.classList.add("selected");
-
-            const nameTd = document.createElement("td");
-            nameTd.textContent = names[i];
-
-            const scoreTd = document.createElement("td");
-            scoreTd.textContent = game.getScore().toString();
-
-            const statusTd = document.createElement("td");
-            statusTd.textContent = dead ? "Dead" : "Alive";
-            statusTd.className = dead ? "status-dead" : "status-alive";
-
-            row.append(nameTd, scoreTd, statusTd);
-            row.addEventListener("click", () => {
-                this.spectateIndex = i;
-            });
-            tbody.appendChild(row);
-        });
-
-        if (this.spectateIndex !== null) {
-            const game = games[this.spectateIndex];
-            this.view.draw(
-                game.getSnake(),
-                game.getHead(),
-                game.getDirection(),
-                game.getApple(),
-                game.getScore(),
+        if (!this.tablePopulated) {
+            this.view.drawScoreBoard(
+                names,
+                games.map((game) => game.getScore()),
+                games.map((game) => game.snakeDied()),
+                this.spectating,
             );
+
+            for (let i = 0; i < names.length; i++) {
+                this.table.children[i].addEventListener("click", () => {
+                    this.table.children[this.spectating].classList.remove(
+                        "selected",
+                    );
+                    this.spectating = i;
+                    this.table.children[this.spectating].classList.add(
+                        "selected",
+                    );
+                    this.drawGame(games[i]);
+                });
+            }
+            this.tablePopulated = true;
         }
+
+        this.drawGame(games[this.spectating]);
     }
 
     private tick(): void {
@@ -154,9 +159,11 @@ export class Controller {
         if (this.game.getScore() > this.highScore) {
             this.highScore = this.game.getScore();
             this.view.drawHighScore(this.highScore);
+            this.saveHighScore();
         }
 
         if (this.game.snakeDied()) {
+            console.log(`TIME : ${this.game.timer}`);
             this.inputBuffer = [];
             this.view.drawMessage("You died! Game over!\nAny key to restart");
             clearInterval(this.currentInterval);
@@ -166,20 +173,20 @@ export class Controller {
 
             return;
         }
-        this.drawGame();
+        this.drawGame(this.game);
     }
 
     private restartGame() {
         this.game = new SnakeGame(this.width, this.height);
     }
 
-    private drawGame(): void {
+    private drawGame(game: SnakeGame): void {
         this.view.draw(
-            this.game.getSnake(),
-            this.game.getHead(),
-            this.game.getDirection(),
-            this.game.getApple(),
-            this.game.getScore(),
+            game.getSnake(),
+            game.getHead(),
+            game.getDirection(),
+            game.getApple(),
+            game.getScore(),
         );
     }
 
@@ -224,5 +231,12 @@ export class Controller {
                 return true;
         }
         return false;
+    }
+
+    private loadHighScore(): number {
+        return parseInt(localStorage.getItem("highScore") ?? "0");
+    }
+    private saveHighScore(): void {
+        localStorage.setItem("highScore", this.highScore.toString());
     }
 }

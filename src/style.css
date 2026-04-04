@@ -64,7 +64,7 @@ canvas {
 #game-row {
   display: flex;
   gap: 16px;
-  align-items: flex-start;
+  align-items: stretch;
 }
 
 #canvas-container {
@@ -74,12 +74,12 @@ canvas {
 }
 
 #spectate-panel {
-  align-self: stretch;
   width: 240px;
   overflow-y: auto;
   background: #1e293b;
   border: 1px solid #334155;
   border-radius: 8px;
+  min-height: 0;
 }
 
 #spectate-panel.hidden {
@@ -93,7 +93,7 @@ canvas {
 }
 
 #spectate-table th {
-  color: #64748b;
+  color: #ffd166;
   font-weight: 600;
   padding: 8px 10px;
   text-align: left;
@@ -109,6 +109,7 @@ canvas {
 }
 
 #spectate-table tbody tr {
+  color: #000000;
   cursor: pointer;
   transition: background 0.1s;
 }
@@ -118,19 +119,16 @@ canvas {
 }
 
 #spectate-table tbody tr.selected {
-  background: #1d4ed8;
+ background: #334155;
+ outline: 1px solid #4d5e75;
 }
 
 #spectate-table tbody tr.dead td {
-  color: #475569;
+  color: #ef476f;
 }
 
-.status-alive {
-  color: #86efac;
-}
-
-.status-dead {
-  color: #f87171;
+#spectate-table tbody tr.alive td {
+  color: #06d6a0;
 }
 
 #ai-button {
@@ -256,4 +254,12 @@ canvas {
 
 #train-button:hover {
   background: #9fffc2;
+}
+
+#ai-settings button.training-off {
+  background: #06d6a0;
+}
+
+#ai-settings button.training-on {
+  background: #ef476f;
 }

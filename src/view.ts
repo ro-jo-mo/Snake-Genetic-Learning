@@ -16,8 +16,10 @@ export class View {
     private aiButton: HTMLElement;
     private highScoreText: HTMLElement;
     private cellSize = 50;
+    private table: HTMLElement;
 
     constructor(width: number, height: number) {
+        this.table = document.getElementById("spectate-table-body")!;
         this.canvas = document.getElementById(
             "game-canvas",
         ) as HTMLCanvasElement;
@@ -28,6 +30,8 @@ export class View {
         this.aiButton = document.getElementById("ai-button")!;
         this.canvas.width = width * this.cellSize;
         this.canvas.height = height * this.cellSize;
+        const panel = document.getElementById("spectate-panel")!;
+        panel.style.maxHeight = this.canvas.height + "px";
     }
 
     public drawMessage(msg: string): void {
@@ -172,5 +176,50 @@ export class View {
                 .map((v) => Math.round(v).toString(16).padStart(2, "0"))
                 .join("")
         );
+    }
+
+    public drawScoreBoard(
+        names: string[],
+        scores: number[],
+        dead: boolean[],
+        spectating: number,
+    ): void {
+        this.table.innerHTML = "";
+
+        for (let i = 0; i < names.length; i++) {
+            const row = document.createElement("tr");
+
+            if (dead[i]) {
+                row.classList.add("dead");
+            }
+            if (i === spectating) {
+                row.classList.add("selected");
+            }
+
+            const name = document.createElement("td");
+            name.textContent = names[i];
+
+            const score = document.createElement("td");
+            score.textContent = scores[i].toString();
+
+            const status = document.createElement("td");
+            status.textContent = dead[i] ? "Dead" : "Alive";
+            status.className = dead[i] ? "status-dead" : "status-alive";
+
+            row.append(name, score, status);
+
+            this.table.appendChild(row);
+        }
+    }
+
+    public toggleTrainButton(bool: boolean): void {
+        const ele = document.getElementById("train-button")!;
+        if (bool) {
+            ele.className = "training-on";
+            ele.textContent = "Stop";
+        } else {
+            ele.className = "training-off";
+            ele.textContent = "Train";
+        }
     }
 }

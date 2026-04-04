@@ -16,6 +16,9 @@ export class Trainer {
     private inputSize: number;
 
     private topKModels: ModelFitness[];
+    private workers: Worker[];
+
+    private static timeout = 1000;
 
     constructor(
         population: number,
@@ -33,9 +36,6 @@ export class Trainer {
         this.gameWidth = gameWidth;
         this.inputSize = gameWidth * gameHeight + 6;
 
-        // add output layer
-        layerSizes.push(4);
-
         this.population = Array.from({ length: population }, () =>
             Model.fromLayerSizes(this.inputSize, layerSizes),
         );
@@ -45,6 +45,15 @@ export class Trainer {
             model: this.population[0],
             fitness: 0,
         });
+
+        const cores = navigator.hardwareConcurrency;
+        this.workers = Array.from(
+            { length: cores - 1 },
+            () =>
+                new Worker(new URL("./worker.ts", import.meta.url), {
+                    type: "module",
+                }),
+        );
     }
 
     public async train(
@@ -67,6 +76,8 @@ export class Trainer {
         let nextGeneration: Model[] = [];
         // Mutate top k with random selection
         let i = 0;
+
+        console.log("Mutating models");
         while (nextGeneration.length < this.population.length) {
             // some biasing towards more performant models
             // this looks somewhat stupid but does work
@@ -77,21 +88,23 @@ export class Trainer {
 
             nextGeneration.push(
                 Model.merge(
-                    sorted[i].model,
+                    this.topKModels[i].model,
                     sorted[index].model,
                     this.perturbationFrequency,
                     this.perturbationMagnitude,
                 ),
             );
-
-            i = i % this.numModelsKept;
+            i++;
+            i %= this.numModelsKept;
         }
-
+        console.log(`Highest Fitness: ${sorted[0].fitness}`);
         this.population = nextGeneration;
     }
 
     private updateTopK(models: ModelFitness[]): void {
-        this.topKModels.concat(models.slice(0, this.numModelsKept));
+        this.topKModels = this.topKModels.concat(
+            models.slice(0, this.numModelsKept),
+        );
         this.topKModels.sort((a, b) => b.fitness - a.fitness);
         this.topKModels = this.topKModels.slice(0, this.numModelsKept);
     }
@@ -101,30 +114,25 @@ export class Trainer {
     ): Promise<number[]> {
         const cores = navigator.hardwareConcurrency;
 
-        const batchSize = Math.ceil(this.population.length / cores);
+        const batchSize = this.population.length / cores;
         let promises: Promise<number[]>[] = [];
-        console.log("Creating workers");
+
+        console.log("Starting workers");
         // Start by creating new worker threads to run training
-        for (let i = 0; i < cores - 1; i++) {
+        for (let i = 0; i < this.workers.length; i++) {
             const batch = this.population.slice(
-                batchSize * i,
-                batchSize * (i + 1),
+                Math.ceil(batchSize * i),
+                Math.ceil(batchSize * (i + 1)),
             );
 
             const promise = new Promise<number[]>((resolve) => {
-                const worker = new Worker(
-                    new URL("./worker.ts", import.meta.url),
-                    { type: "module" },
-                );
-
-                worker.postMessage({
+                this.workers[i].postMessage({
                     batch,
                     width: this.gameWidth,
                     height: this.gameHeight,
                 });
-                worker.onmessage = (e) => {
+                this.workers[i].onmessage = (e) => {
                     resolve(e.data.fitnesses);
-                    worker.terminate();
                 };
             });
 
@@ -132,21 +140,17 @@ export class Trainer {
         }
 
         // As sending data between workers is slow, we keep the main thread for a visualisation
-        const batch = this.population.slice(
-            (cores - 1) * batchSize,
-            cores * batchSize,
-        );
+        const batch = this.population.slice(Math.ceil((cores - 1) * batchSize));
 
         let games = Array.from(
             { length: batch.length },
             () => new SnakeGame(this.gameWidth, this.gameHeight),
         );
         // AFter each training step, return data to ui
-        console.log(`Main thread training ${batch.length} models`);
+        console.log("Starting main thread");
+
+        let timeout = Trainer.timeout;
         while (!games.every((game) => game.snakeDied())) {
-            for (const g of games) {
-                console.log(`${g.snakeDied()}`);
-            }
             Trainer.runModelsOneStep(
                 batch,
                 games,
@@ -157,10 +161,16 @@ export class Trainer {
                 batch.map((model) => model.name),
                 games,
             );
+
+            timeout--;
+            if (timeout < 0) {
+                break;
+            }
+            // await new Promise((r) => setTimeout(r, 100));
         }
-        console.log("Main thread finished");
+
         const fitnesses = await Promise.all(promises);
-        console.log("Workers finished");
+
         fitnesses.push(games.map((game) => Trainer.fitness(game)));
         return fitnesses.flat();
     }
@@ -172,11 +182,17 @@ export class Trainer {
     ): number {
         let game = new SnakeGame(width, height);
 
+        // too lazy to make this a param
+        let timeout = Trainer.timeout;
         while (!game.snakeDied()) {
             const encoding = Trainer.encodeGame(game, width, height);
             const decision = Trainer.getDecisionFromModel(model, encoding);
             game.setDirection(decision);
             game.moveSnake();
+            timeout--;
+            if (timeout < 0) {
+                break;
+            }
         }
 
         return Trainer.fitness(game);
@@ -207,7 +223,7 @@ export class Trainer {
         // I am mostly interested in getting a good score in a reasonable amount of time
         const score = game.getScore();
         const time = game.timer;
-        return score + (5 * score) / time ** 2;
+        return score + (5 * score) / Math.log(game.timer + 1);
     }
 
     private static getDecisionFromModel(
@@ -323,9 +339,12 @@ export class Model {
         let layerWeights: number[][][] = [];
         let layerBiases: number[][] = [];
 
+        // add output layer without mutating the input array
+        const layers = [...neuronsPerLayer, 4];
+
         let lastLayer = inputSize;
 
-        for (const layerSize of neuronsPerLayer) {
+        for (const layerSize of layers) {
             let weights: number[][] = [];
             let biases: number[] = [];
 
@@ -357,8 +376,10 @@ export class Model {
 
             let layerOut: number[] = [];
 
-            for (const weights of neurons) {
-                const out = relu(dot(weights, previousOutputs) + biases[i]);
+            for (let neuron = 0; neuron < neurons.length; neuron++) {
+                const out = relu(
+                    dot(neurons[neuron], previousOutputs) + biases[neuron],
+                );
                 layerOut.push(out);
             }
 
@@ -390,11 +411,7 @@ export class Model {
             layerBiases.push(biases);
         }
 
-        return new Model(
-            layerWeights,
-            layerBiases,
-            modelA.name.concat("-", modelB.name),
-        );
+        return new Model(layerWeights, layerBiases);
     }
 
     private static mergeLayer(
@@ -419,7 +436,7 @@ export class Model {
                 perturbationMagnitude,
             );
 
-            if (Math.random() > 0.5) {
+            if (Math.random() > 1.5) {
                 newBiases.push(modelA.layerBiases[layer][neuron] + biasPerturb);
             } else {
                 newBiases.push(modelB.layerBiases[layer][neuron] + biasPerturb);
@@ -437,7 +454,7 @@ export class Model {
                     perturbationMagnitude,
                 );
                 // randomly decided which weight to use
-                if (Math.random() > 0.5) {
+                if (Math.random() > 1.5) {
                     currentNeuron.push(
                         modelA.layerWeights[layer][neuron][weight] +
                             weightPerturb,
@@ -449,6 +466,7 @@ export class Model {
                     );
                 }
             }
+            newWeights.push(currentNeuron);
         }
         return [newWeights, newBiases];
     }
@@ -458,7 +476,7 @@ export class Model {
         magnitude: number,
     ): number {
         if (Math.random() < frequency) {
-            return Math.random() * magnitude;
+            return (2 * Math.random() - 1) * magnitude;
         }
         return 0;
     }
