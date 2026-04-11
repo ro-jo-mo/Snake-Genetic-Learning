@@ -223,12 +223,12 @@ export class Trainer {
         // I am mostly interested in getting a good score in a reasonable amount of time
         const score = game.getScore();
         const time = game.timer;
-        return score + (5 * score) / Math.log(game.timer + 1);
+        return score + (5 * score) / time ** 2;
     }
 
     private static getDecisionFromModel(
         model: Model,
-        encoding: number[],
+        encoding: Float32Array,
     ): Vec2 {
         // Originally I was going to do 3 outputs, forwards, turn left, turn right
         // This likely would confuse things for the model
@@ -260,7 +260,7 @@ export class Trainer {
         game: SnakeGame,
         width: number,
         height: number,
-    ): number[] {
+    ): Float32Array {
         // Requirements for the input:
         // The full game board, encoding the number of moves before the square will be empty
         // i.e. 0 is empty now, 1 will be empty in 1 turn ...
@@ -268,7 +268,7 @@ export class Trainer {
         // x y of the current snake direction
         // x y of snake head
         const offset = height * width;
-        let encoding: number[] = Array(offset + 6).fill(0);
+        let encoding = new Float32Array(offset + 6);
 
         // convert 2d coord to 1d
         const convert = (pos: Vec2) => pos.x + pos.y * width;
@@ -306,17 +306,17 @@ export class Trainer {
 // Simple dense layers with relu activation functions attached
 // Using He initialisation for biases & weights
 export class Model {
-    private layerWeights: number[][][] = [];
-    private layerBiases: number[][] = [];
+    private weights: Float32Array;
+    private layout: number[];
     public name: string;
 
     private constructor(
-        weights: number[][][],
-        biases: number[][],
+        weights: Float32Array,
+        layout: number[],
         name: string | undefined = undefined,
     ) {
-        this.layerWeights = weights;
-        this.layerBiases = biases;
+        this.weights = weights;
+        this.layout = layout;
         if (name === undefined) {
             this.name = Names.getName();
         } else {
@@ -325,67 +325,76 @@ export class Model {
     }
 
     public static deserialize(data: {
-        layerWeights: number[][][];
-        layerBiases: number[][];
-        name: string;
+        weights: Float32Array;
+        layout: number[];
     }): Model {
-        return new Model(data.layerWeights, data.layerBiases, data.name);
+        return new Model(data.weights, data.layout, "");
     }
 
     public static fromLayerSizes(
         inputSize: number,
         neuronsPerLayer: number[],
     ): Model {
-        let layerWeights: number[][][] = [];
-        let layerBiases: number[][] = [];
+        // add input / output layers
+        const layers = [inputSize, ...neuronsPerLayer, 4];
 
-        // add output layer without mutating the input array
-        const layers = [...neuronsPerLayer, 4];
+        let totalSize = 0;
+
+        for (let i = 1; i < layers.length; i++) {
+            // weights per layer = neurons * neurons of last layer + neurons (bias term)
+            totalSize += layers[i - 1] * layers[i] + layers[i];
+        }
+
+        let weights = new Float32Array(totalSize);
 
         let lastLayer = inputSize;
 
-        for (const layerSize of layers) {
-            let weights: number[][] = [];
-            let biases: number[] = [];
-
-            for (let i = 0; i < layerSize; i++) {
-                let neuron: number[] = [];
-
-                for (let j = 0; j < lastLayer; j++) {
-                    neuron.push(gaussian(Math.sqrt(2 / lastLayer)));
+        let counter = 0;
+        for (let layer = 1; layer < layers.length; layer++) {
+            for (let neuron = 0; neuron < layers[layer]; neuron++) {
+                for (let weight = 0; weight < lastLayer; weight++) {
+                    weights[counter] = gaussian(Math.sqrt(2 / lastLayer));
+                    counter++;
                 }
-
-                weights.push(neuron);
-                biases.push(gaussian(Math.sqrt(0.2 / lastLayer)));
+                // bias
+                weights[counter] = gaussian(Math.sqrt(0.25 / lastLayer));
+                counter++;
             }
-
-            lastLayer = layerSize;
-            layerWeights.push(weights);
-            layerBiases.push(biases);
+            lastLayer = layers[layer];
         }
 
-        return new Model(layerWeights, layerBiases);
+        return new Model(weights, layers);
     }
 
     // Execute the model on some input data
-    public execute(input: number[]): number[] {
-        let previousOutputs = input;
-        for (let i = 0; i < this.layerWeights.length; i++) {
-            let neurons = this.layerWeights[i];
-            let biases = this.layerBiases[i];
+    public execute(input: Float32Array): Float32Array {
+        let lastOut = input;
 
-            let layerOut: number[] = [];
+        let counter = 0;
+        for (let layer = 1; layer < this.layout.length; layer++) {
+            // for neuron in this layer
+            // iterate lastLayer + 1
+            let nextOut = new Float32Array(this.layout[layer]);
 
-            for (let neuron = 0; neuron < neurons.length; neuron++) {
-                const out = relu(
-                    dot(neurons[neuron], previousOutputs) + biases[neuron],
-                );
-                layerOut.push(out);
+            for (let neuron = 0; neuron < this.layout[layer]; neuron++) {
+                for (let weight = 0; weight < lastOut.length; weight++) {
+                    nextOut[neuron] += this.weights[counter] * lastOut[weight];
+                    counter++;
+                }
+                // add bias & activation function
+                nextOut[neuron] += this.weights[counter];
+                counter++;
+                // skip relu for output
+                if (layer == this.layout.length - 1) {
+                    continue;
+                }
+                nextOut[neuron] = relu(nextOut[neuron]);
             }
 
-            previousOutputs = layerOut;
+            lastOut = nextOut;
         }
-        return previousOutputs;
+
+        return lastOut;
     }
 
     // Select random weights from both model A & B
@@ -396,79 +405,16 @@ export class Model {
         perturbationFrequency: number,
         perturbationMagnitude: number,
     ): Model {
-        let layerWeights: number[][][] = [];
-        let layerBiases: number[][] = [];
+        let weights = modelA.weights.slice();
 
-        for (let layer = 0; layer < modelA.layerWeights.length; layer++) {
-            const [weights, biases] = this.mergeLayer(
-                layer,
-                modelA,
-                modelB,
+        for (let i = 0; i < weights.length; i++) {
+            weights[i] += this.getPerturbation(
                 perturbationFrequency,
                 perturbationMagnitude,
             );
-            layerWeights.push(weights);
-            layerBiases.push(biases);
         }
 
-        return new Model(layerWeights, layerBiases);
-    }
-
-    private static mergeLayer(
-        layer: number,
-        modelA: Model,
-        modelB: Model,
-        perturbationFrequency: number,
-        perturbationMagnitude: number,
-    ): [number[][], number[]] {
-        let newWeights: number[][] = [];
-        let newBiases: number[] = [];
-        // iterate over the neurons in the current layer
-        for (
-            let neuron = 0;
-            neuron < modelA.layerWeights[layer].length;
-            neuron++
-        ) {
-            let currentNeuron: number[] = [];
-            // random perturbations to the bias
-            const biasPerturb = this.getPerturbation(
-                perturbationFrequency,
-                perturbationMagnitude,
-            );
-
-            if (Math.random() > 1.5) {
-                newBiases.push(modelA.layerBiases[layer][neuron] + biasPerturb);
-            } else {
-                newBiases.push(modelB.layerBiases[layer][neuron] + biasPerturb);
-            }
-
-            // for each neuron, merge the weights of the two models
-            for (
-                let weight = 0;
-                weight < modelA.layerWeights[layer][neuron].length;
-                weight++
-            ) {
-                // introduce random perturbations to weights
-                const weightPerturb = this.getPerturbation(
-                    perturbationFrequency,
-                    perturbationMagnitude,
-                );
-                // randomly decided which weight to use
-                if (Math.random() > 1.5) {
-                    currentNeuron.push(
-                        modelA.layerWeights[layer][neuron][weight] +
-                            weightPerturb,
-                    );
-                } else {
-                    currentNeuron.push(
-                        modelB.layerWeights[layer][neuron][weight] +
-                            weightPerturb,
-                    );
-                }
-            }
-            newWeights.push(currentNeuron);
-        }
-        return [newWeights, newBiases];
+        return new Model(weights, modelA.layout, modelA.name);
     }
 
     private static getPerturbation(
@@ -480,14 +426,132 @@ export class Model {
         }
         return 0;
     }
+
+    public backpropagation(input: Float32Array, expected: Float32Array): void {
+        let forward = this.forwardPass(input);
+
+        // variable names are hard :/
+        // for the following code
+        // L : loss
+        // w : individual weight
+        // z : weighted sum of a neuron, prior to activation (w1x1 + w2x2 + ... + bias)
+        //
+        // i.e dLdw = partial derivative of the loss function, with respect to an individual weight
+
+        let gradients = new Float32Array(this.weights.length);
+        let errorSignals = new Float32Array(this.weights.length);
+        let counter = this.weights.length;
+        let layerOffset = 4;
+        // start with softmax layers
+        // 4 outputs
+
+        for (let neuron = 0; neuron < 4; neuron++) {
+            // number of weights per neuron in this layer
+            // also represents the size of the previous layer
+            const numOfWeights = this.layout.at(-2)!;
+
+            const errorSignal =
+                forward.weightedSums.at(-neuron - 1)! -
+                expected.at(-neuron - 1)!;
+
+            for (let weight = 0; weight < numOfWeights; weight++) {
+                // error = activation of prior neuron connected with this weight
+                // prior neuron = length - current layer size - prior layer size + current_weight_index
+                const activation = forward.activations.at(
+                    weight - layerOffset - numOfWeights,
+                )!;
+
+                errorSignals[counter] = activation;
+                gradients[counter] = errorSignal * activation;
+
+                counter--;
+            }
+        }
+
+        let previousLayerSize = 4;
+
+        for (let layer = this.layout.length - 2; layer > 0; layer--) {
+            const numOfWeights = this.layout.at(layer - 1)!;
+
+            for (let neuron = 0; neuron < this.layout[layer]; neuron++) {
+                // error = sum of downstream error signals * the weight connecting them
+                let errorSignal = 0;
+
+                for (
+                    let priorNeuron = layerOffset;
+                    priorNeuron < layerOffset + previousLayerSize;
+                    priorNeuron++
+                ) {
+                    // weight index =
+                    // neuron index =
+                    errorSignal += 5;
+                }
+
+                for (let weight = 0; weight < numOfWeights; weight++) {
+                    errorSignals[counter] = errorSignal;
+                    gradients[counter] = dLdz;
+
+                    counter++;
+                }
+            }
+
+            layerOffset += this.layout[layer];
+        }
+    }
+
+    private forwardPass(input: Float32Array): {
+        weightedSums: Float32Array;
+        activations: Float32Array;
+    } {
+        let lastOut = input;
+
+        let neuronActivations = new Float32Array(
+            this.layout.reduce((total, value) => total + value),
+        );
+
+        let neuronOutputs = new Float32Array(neuronActivations.length);
+
+        let neuronCounter = 0;
+        let counter = 0;
+        for (let layer = 1; layer < this.layout.length; layer++) {
+            // for neuron in this layer
+            // iterate lastLayer + 1
+            let nextOut = new Float32Array(this.layout[layer]);
+
+            for (let neuron = 0; neuron < this.layout[layer]; neuron++) {
+                for (let weight = 0; weight < lastOut.length; weight++) {
+                    nextOut[neuron] += this.weights[counter] * lastOut[weight];
+                    counter++;
+                }
+
+                // add bias & activation function
+                nextOut[neuron] += this.weights[counter];
+                counter++;
+            }
+
+            lastOut = nextOut;
+
+            let activations;
+
+            if (layer == this.layout.length - 1) {
+                activations = softmax(lastOut);
+            } else {
+                activations = lastOut.map(relu);
+            }
+
+            for (let neuron = 0; neuron < lastOut.length; neuron++) {
+                neuronActivations[neuronCounter] = activations[neuron];
+                neuronOutputs[neuronCounter] = lastOut[neuron];
+                neuronCounter++;
+            }
+        }
+
+        return { weightedSums: neuronOutputs, activations: neuronActivations };
+    }
 }
 
 function relu(input: number): number {
     return input > 0 ? input : 0;
-}
-
-function dot(a: number[], b: number[]): number {
-    return a.reduce((total, x, i) => total + x * b[i], 0);
 }
 
 function gaussian(sigma: number): number {
@@ -500,4 +564,18 @@ function gaussian(sigma: number): number {
         return 0;
     }
     return value;
+}
+
+function crossEntropy(expected: Float32Array, predicted: Float32Array): number {
+    // First apply softmax to the outputs
+    const probabilities = softmax(predicted);
+
+    return probabilities.reduce(
+        (loss, current, index) => loss - Math.log(current) * expected[index],
+    );
+}
+
+function softmax(values: Float32Array): Float32Array {
+    const total = values.reduce((sum, current) => Math.exp(current) + sum);
+    return values.map((value) => Math.exp(value) / total);
 }

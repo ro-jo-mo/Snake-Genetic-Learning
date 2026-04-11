@@ -19,7 +19,11 @@ export class Controller {
     private tablePopulated = false;
     private training = false;
 
-    constructor() {
+    constructor(width: number, height: number, tickRate: number) {
+        this.width = width;
+        this.height = height;
+        this.tickRate = tickRate;
+
         this.view = new View(this.width, this.height);
         this.game = new SnakeGame(this.width, this.height);
         this.highScore = this.loadHighScore();
@@ -31,7 +35,7 @@ export class Controller {
             const input = document.createElement("input");
             input.type = "number";
             input.className = "layer-input";
-            input.value = "64";
+            input.value = "32";
             input.min = "1";
             document.getElementById("layer-inputs")!.appendChild(input);
         });
@@ -79,20 +83,22 @@ export class Controller {
             s.keepTopK,
             s.perturbationFrequency,
             s.perturbationMagnitude,
-            s.gameWidth,
-            s.gameHeight,
+            this.width,
+            this.height,
             s.layerSizes,
         );
         this.spectating = 0;
 
         this.drawGame(this.game);
 
+        let epoch = 0;
         while (this.training) {
-            console.log("Running next training iteration");
+            console.log(`Running next training iteration ${epoch}`);
             this.tablePopulated = false;
             await trainer.train((names, games) =>
                 this.aiCallback(names, games),
             );
+            epoch++;
         }
     }
 
@@ -110,8 +116,6 @@ export class Controller {
             keepTopK: parseInt(get("ai-keep-top-k")),
             perturbationFrequency: parseFloat(get("ai-perturb-freq")),
             perturbationMagnitude: parseFloat(get("ai-perturb-mag")),
-            gameWidth: 15,
-            gameHeight: 15,
             layerSizes: layers,
         };
     }
