@@ -427,7 +427,10 @@ export class Model {
         return 0;
     }
 
-    public backpropagation(input: Float32Array, expected: Float32Array): void {
+    public backpropagation(
+        input: Float32Array,
+        expected: Float32Array,
+    ): Float32Array {
         let forward = this.forwardPass(input);
 
         // variable names are hard :/
@@ -439,64 +442,97 @@ export class Model {
         // i.e dLdw = partial derivative of the loss function, with respect to an individual weight
 
         let gradients = new Float32Array(this.weights.length);
-        let errorSignals = new Float32Array(this.weights.length);
-        let counter = this.weights.length;
+        let errorSignals = new Float32Array(forward.activations.length);
+
+        let weightCounter = this.weights.length - 1;
+
         let layerOffset = 4;
+
         // start with softmax layers
         // 4 outputs
-
         for (let neuron = 0; neuron < 4; neuron++) {
-            // number of weights per neuron in this layer
-            // also represents the size of the previous layer
-            const numOfWeights = this.layout.at(-2)!;
+            // number of weights per neuron in this layer (+1 for bias)
+            // also represents the size of the previous layer (-1)
+            const numOfWeights = this.layout.at(-2)! + 1;
 
             const errorSignal =
                 forward.weightedSums.at(-neuron - 1)! -
                 expected.at(-neuron - 1)!;
 
-            for (let weight = 0; weight < numOfWeights; weight++) {
+            errorSignals[errorSignals.length - neuron - 1] = errorSignal;
+
+            // firstly do bias gradient
+            gradients[weightCounter] = errorSignal;
+
+            for (let weight = 1; weight < numOfWeights; weight++) {
                 // error = activation of prior neuron connected with this weight
                 // prior neuron = length - current layer size - prior layer size + current_weight_index
                 const activation = forward.activations.at(
-                    weight - layerOffset - numOfWeights,
+                    -layerOffset - weight - 1,
                 )!;
 
-                errorSignals[counter] = activation;
-                gradients[counter] = errorSignal * activation;
+                gradients[weightCounter] = errorSignal * activation;
 
-                counter--;
+                weightCounter--;
             }
         }
 
-        let previousLayerSize = 4;
-
         for (let layer = this.layout.length - 2; layer > 0; layer--) {
-            const numOfWeights = this.layout.at(layer - 1)!;
+            const numOfWeights = this.layout[layer - 1] + 1;
+
+            const previousLayerSize = this.layout[layer + 1];
+            const previousNumOfWeights = this.layout[layer] + 1;
+
+            // an offset representing the index offset for the first weight of the downstream layer
+            const weightsOffset = weightCounter + 1;
 
             for (let neuron = 0; neuron < this.layout[layer]; neuron++) {
                 // error = sum of downstream error signals * the weight connecting them
                 let errorSignal = 0;
 
                 for (
-                    let priorNeuron = layerOffset;
-                    priorNeuron < layerOffset + previousLayerSize;
+                    let priorNeuron = 0;
+                    priorNeuron < previousLayerSize;
                     priorNeuron++
                 ) {
-                    // weight index =
-                    // neuron index =
-                    errorSignal += 5;
+                    // I need to be able to get the error of all neurons in the downstream layer
+                    // to do this I will use : errorSignals.at( - layeroffset + priorNeuron)
+                    // I additionally need the weight attaching this neuron to the current one
+                    // to get this I will use : weightsOffset + previousNumOfWeights * priorNeuron + neuron?
+
+                    errorSignal +=
+                        errorSignals.at(-layerOffset + priorNeuron)! *
+                        this.weights[
+                            weightsOffset +
+                                previousNumOfWeights * priorNeuron +
+                                neuron
+                        ];
                 }
 
-                for (let weight = 0; weight < numOfWeights; weight++) {
-                    errorSignals[counter] = errorSignal;
-                    gradients[counter] = dLdz;
+                errorSignals[errorSignals.length - neuron - layerOffset] =
+                    errorSignal;
 
-                    counter++;
+                // firstly do bias gradient
+
+                gradients[weightCounter] = errorSignal;
+                weightCounter--;
+
+                for (let weight = 1; weight < numOfWeights; weight++) {
+                    // the activation of the neuron in the upstream layer connected to this neuron by weight w
+                    const activation = forward.activations.at(
+                        -layerOffset - weight - 1,
+                    )!;
+
+                    gradients[weightCounter] = errorSignal * activation;
+
+                    weightCounter--;
                 }
             }
 
             layerOffset += this.layout[layer];
         }
+
+        return gradients;
     }
 
     private forwardPass(input: Float32Array): {
