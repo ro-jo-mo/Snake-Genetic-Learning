@@ -1,4 +1,4 @@
-import { Trainer, Model } from "./ai";
+import { Trainer, Model } from "./training/ai";
 
 self.onmessage = (e) => {
     const { batch, width, height } = e.data;

@@ -1,7 +1,7 @@
 // mvc controller
 import { SnakeGame } from "./snake";
 import { View } from "./view";
-import { Trainer } from "./ai";
+import { Trainer } from "./training/ai";
 import type { Vec2 } from "./snake";
 
 export class Controller {
