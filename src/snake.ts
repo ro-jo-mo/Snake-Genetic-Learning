@@ -21,6 +21,20 @@ export class SnakeGame {
         this.spawnApple();
     }
 
+    public static fromSnake(
+        snake: Vec2[],
+        direction: Vec2,
+        width: number,
+        height: number,
+    ): SnakeGame {
+        const game = new SnakeGame(width, height);
+        game.snake = snake;
+        game.head = snake.length - 1;
+        game.tail = 0;
+        game.direction = direction;
+        return game;
+    }
+
     private createSnake(): void {
         // Assume we can make a snake of length 3
         const x = Math.floor(this.width / 2);

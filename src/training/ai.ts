@@ -257,7 +257,7 @@ export class Trainer {
         }
     }
 
-    private static encodeGame(
+    public static encodeGame(
         game: SnakeGame,
         width: number,
         height: number,
